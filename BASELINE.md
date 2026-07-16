@@ -5,7 +5,7 @@ Every listed case is required. `fail`, `not_run`, panic, output overflow, artifa
 | Case | Contract |
 | --- | --- |
 | `artifact_identity` | Exact SHA-256, clean VCS revision, toolchain, executable type, and anchored version agree. |
-| `network_namespace_isolation` | Linux runner is not PID 1, sees loopback only, and has no default route. |
+| `network_namespace_isolation` | Linux runner is not PID 1 and every installed IPv4/IPv6 route is loopback-only; unrouted kernel tunnel devices are harmless. |
 | `operator_lifecycle` | Revocation init, provider import via stdin, token issue, owner-only files, no overwrite or secret echo. |
 | `http_unauthenticated_no_egress` | Missing/invalid auth returns 401 and cannot reach any external network or the fake provider. |
 | `http_authenticated_provider_success` | Valid token traverses TLS 1.3 fake provider and returns exact synthetic 200 contract. |

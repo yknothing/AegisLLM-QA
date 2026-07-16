@@ -154,6 +154,39 @@ func TestBaselineRegistersEveryRequiredCaseExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestValidateNetworkIsolationAllowsUnroutedKernelDevices(t *testing.T) {
+	ipv4 := []byte("Iface\tDestination\tGateway\n")
+	ipv6 := []byte("00000000000000000000000000000000 00 00000000000000000000000000000000 00 00000000000000000000000000000000 ffffffff 00000001 00000000 00200200 lo\n")
+	if err := validateNetworkIsolation([]string{"bonding_masters", "erspan0", "lo", "tunl0"}, ipv4, ipv6); err != nil {
+		t.Fatalf("validateNetworkIsolation() error = %v", err)
+	}
+}
+
+func TestValidateNetworkIsolationRejectsAnyNonLoopbackRoute(t *testing.T) {
+	tests := []struct {
+		name string
+		ipv4 string
+		ipv6 string
+	}{
+		{
+			name: "IPv4",
+			ipv4: "Iface\tDestination\tGateway\neth0\t00000000\t0100007F\n",
+		},
+		{
+			name: "IPv6",
+			ipv4: "Iface\tDestination\tGateway\n",
+			ipv6: "00000000000000000000000000000000 00 00000000000000000000000000000000 00 00000000000000000000000000000000 00000000 00000001 00000000 00000000 eth0\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateNetworkIsolation([]string{"eth0", "lo"}, []byte(tt.ipv4), []byte(tt.ipv6)); err == nil {
+				t.Fatal("validateNetworkIsolation() accepted non-loopback route")
+			}
+		})
+	}
+}
+
 func TestWorkspaceEnvironmentDropsLANGAndRejectsNonHarnessKeys(t *testing.T) {
 	environment, err := workspaceEnvironment([]string{
 		"HOME=/tmp/home",

@@ -73,20 +73,51 @@ func networkNamespaceIsolationCase(_ context.Context, _ *Context) error {
 		interfaces = append(interfaces, entry.Name())
 	}
 	sort.Strings(interfaces)
-	if len(interfaces) != 1 || interfaces[0] != "lo" {
-		return failure("non_loopback_interface_present")
-	}
-	routes, err := os.ReadFile("/proc/net/route")
+	ipv4Routes, err := os.ReadFile("/proc/net/route")
 	if err != nil {
 		return failure("route_inventory_unavailable")
 	}
-	lines := strings.Split(strings.TrimSpace(string(routes)), "\n")
-	for _, line := range lines[1:] {
+	ipv6Routes, err := os.ReadFile("/proc/net/ipv6_route")
+	if err != nil {
+		return failure("route_inventory_unavailable")
+	}
+	return validateNetworkIsolation(interfaces, ipv4Routes, ipv6Routes)
+}
+
+func validateNetworkIsolation(interfaces []string, ipv4Routes, ipv6Routes []byte) error {
+	hasLoopback := false
+	for _, name := range interfaces {
+		if name == "lo" {
+			hasLoopback = true
+			break
+		}
+	}
+	if !hasLoopback {
+		return failure("loopback_interface_missing")
+	}
+
+	ipv4Lines := strings.Split(strings.TrimSpace(string(ipv4Routes)), "\n")
+	for index, line := range ipv4Lines {
+		if index == 0 || strings.TrimSpace(line) == "" {
+			continue
+		}
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			return failure("route_inventory_invalid")
 		}
-		if fields[0] != "lo" || fields[1] == "00000000" {
+		if fields[0] != "lo" {
+			return failure("external_route_present")
+		}
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(ipv6Routes)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			return failure("route_inventory_invalid")
+		}
+		if fields[9] != "lo" {
 			return failure("external_route_present")
 		}
 	}
