@@ -1,0 +1,6 @@
+# @yknothing is the bootstrap administrator, not an independent QA reviewer.
+# Replace or join this owner with a real independent QA identity before
+# claiming independent-human ownership.
+* @yknothing
+/.github/** @yknothing
+/GOVERNANCE.md @yknothing
