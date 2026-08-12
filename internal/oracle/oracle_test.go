@@ -37,6 +37,16 @@ func TestGenerateSetProducesDistinctUsableCanaries(t *testing.T) {
 	if len(set.JWTSigningKey) < 32 {
 		t.Fatalf("JWT key length = %d, want >=32", len(set.JWTSigningKey))
 	}
+	for label, value := range map[string]string{
+		"jwt": set.JWTSigningKey, "provider": set.ProviderKey, "prompt": set.Prompt,
+		"completion": set.Completion, "error": set.Error,
+	} {
+		for _, character := range value {
+			if character >= '0' && character <= '9' {
+				t.Fatalf("%s canary contains a digit and may collide with PII rules", label)
+			}
+		}
+	}
 }
 
 func TestScanBytesHonorsPerSurfaceAllowlistAndDoesNotReturnRaw(t *testing.T) {

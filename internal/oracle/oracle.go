@@ -306,11 +306,26 @@ func knownLabel(candidate Label) bool {
 }
 
 func randomTagged(tag string, byteCount int) (string, error) {
-	random, err := randomHex(byteCount)
+	random, err := randomLetters(byteCount)
 	if err != nil {
 		return "", err
 	}
 	return tag + "_qa_" + random, nil
+}
+
+func randomLetters(byteCount int) (string, error) {
+	raw := make([]byte, byteCount)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	const alphabet = "abcdefghijklmnop"
+	encoded := make([]byte, len(raw)*2)
+	for index, value := range raw {
+		encoded[index*2] = alphabet[value>>4]
+		encoded[index*2+1] = alphabet[value&0x0f]
+	}
+	clear(raw)
+	return string(encoded), nil
 }
 
 func randomHex(byteCount int) (string, error) {
