@@ -254,7 +254,6 @@ func httpRouteAndHeaderContractCase(ctx context.Context, runContext *Context) er
 			{http.MethodGet, "/", http.StatusNotFound},
 			{http.MethodGet, "/metrics", http.StatusNotFound},
 			{http.MethodGet, "/debug/pprof", http.StatusNotFound},
-			{http.MethodGet, "/v1/models", http.StatusNotFound},
 			{http.MethodGet, "/admin/health", http.StatusNotFound},
 			{http.MethodPost, "/admin/keys/virtual", http.StatusNotFound},
 			{http.MethodDelete, "/admin/keys/virtual/qa", http.StatusNotFound},
@@ -272,6 +271,16 @@ func httpRouteAndHeaderContractCase(ctx context.Context, runContext *Context) er
 			if len(fixture.workspace.Oracle.ScanBytes(oracle.SurfaceGatewayResponse, body)) != 0 {
 				return failure("route_matrix_response_canary")
 			}
+		}
+		modelsResp, modelsBody, err := fixture.request(ctx, http.MethodGet, "/v1/models", "Bearer "+fixture.token, nil, nil)
+		if err != nil {
+			return err
+		}
+		if err := acceptAuthenticatedModelsRoute(modelsResp.StatusCode, modelsBody, harness.Model); err != nil {
+			return err
+		}
+		if len(fixture.workspace.Oracle.ScanBytes(oracle.SurfaceGatewayResponse, modelsBody)) != 0 {
+			return failure("route_matrix_response_canary")
 		}
 		if fixture.provider.HitCount() != baselineHits {
 			return failure("route_matrix_provider_egress")
@@ -346,34 +355,51 @@ func unsupportedCapabilitiesFailClosedCase(ctx context.Context, runContext *Cont
 		if err := gateway.WaitHealthy(healthCtx, fixture.workspace.GatewayURL+"/health"); err != nil {
 			return failure("gateway_health_failed")
 		}
-		claimVariants := []func(map[string]any){
-			func(claims map[string]any) {
-				claims["key_source"] = "byok"
-				claims["byok_key_id"] = "qa-reserved-byok"
-			},
-			func(claims map[string]any) { claims["tpm"] = float64(1) },
+		byokHits := fixture.provider.HitCount()
+		byokToken, err := resignToken(fixture.token, fixture.workspace.Canaries.JWTSigningKey, func(claims map[string]any) {
+			claims["key_source"] = "byok"
+			claims["byok_key_id"] = "qa-reserved-byok"
+		})
+		if err != nil {
+			return err
 		}
-		baselineHits := fixture.provider.HitCount()
-		for _, mutate := range claimVariants {
-			forged, err := resignToken(fixture.token, fixture.workspace.Canaries.JWTSigningKey, mutate)
-			if err != nil {
-				return err
-			}
-			if err := fixture.workspace.Oracle.RegisterVirtualToken([]byte(forged)); err != nil {
-				return failure("token_oracle_registration_failed")
-			}
-			fixture.runContext.registerCanary([]byte(forged))
-			response, body, err := fixture.request(ctx, http.MethodPost, "/v1/chat/completions", "Bearer "+forged, fixture.validRequestBody(false), nil)
-			forged = ""
-			if err != nil {
-				return err
-			}
-			if response.StatusCode != http.StatusUnauthorized || fixture.provider.HitCount() != baselineHits {
-				return failure("unsupported_claim_allowed")
-			}
-			if len(fixture.workspace.Oracle.ScanBytes(oracle.SurfaceGatewayResponse, body)) != 0 {
-				return failure("unsupported_claim_response_canary")
-			}
+		if err := fixture.workspace.Oracle.RegisterVirtualToken([]byte(byokToken)); err != nil {
+			return failure("token_oracle_registration_failed")
+		}
+		fixture.runContext.registerCanary([]byte(byokToken))
+		byokResp, byokBody, err := fixture.request(ctx, http.MethodPost, "/v1/chat/completions", "Bearer "+byokToken, fixture.validRequestBody(false), nil)
+		byokToken = ""
+		if err != nil {
+			return err
+		}
+		if byokResp.StatusCode != http.StatusUnauthorized || fixture.provider.HitCount() != byokHits {
+			return failure("unsupported_claim_allowed")
+		}
+		if len(fixture.workspace.Oracle.ScanBytes(oracle.SurfaceGatewayResponse, byokBody)) != 0 {
+			return failure("unsupported_claim_response_canary")
+		}
+
+		tpmHits := fixture.provider.HitCount()
+		tpmToken, err := resignToken(fixture.token, fixture.workspace.Canaries.JWTSigningKey, func(claims map[string]any) {
+			claims["tpm"] = float64(jwtTPMProbeLimit)
+		})
+		if err != nil {
+			return err
+		}
+		if err := fixture.workspace.Oracle.RegisterVirtualToken([]byte(tpmToken)); err != nil {
+			return failure("token_oracle_registration_failed")
+		}
+		fixture.runContext.registerCanary([]byte(tpmToken))
+		tpmResp, tpmBody, err := fixture.request(ctx, http.MethodPost, "/v1/chat/completions", "Bearer "+tpmToken, fixture.validRequestBody(false), nil)
+		tpmToken = ""
+		if err != nil {
+			return err
+		}
+		if err := acceptJWTTPMClaim(tpmResp.StatusCode, fixture.provider.HitCount(), tpmHits); err != nil {
+			return err
+		}
+		if len(fixture.workspace.Oracle.ScanBytes(oracle.SurfaceGatewayResponse, tpmBody)) != 0 {
+			return failure("unsupported_claim_response_canary")
 		}
 		return nil
 	})
